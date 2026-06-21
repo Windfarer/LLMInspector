@@ -1,0 +1,19 @@
+/* Add to frontend/src/index.css */
+.badge.thinking {
+  background: #f1f5f9;
+  color: #475569;
+  border-color: #cbd5e1;
+  animation: pulse 2s infinite;
+}
+
+.badge.outputting {
+  background: rgba(56, 189, 248, 0.2);
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+}
+
+@keyframes pulse {
+  0% { opacity: 1; }
+  50% { opacity: 0.6; }
+  100% { opacity: 1; }
+}

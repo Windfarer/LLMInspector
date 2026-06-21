@@ -1,0 +1,27 @@
+# Backend generated binaries
+backend/llminspector
+
+# Database files
+backend/metrics.db
+backend/metrics.db-shm
+backend/metrics.db-wal
+*.db
+
+# Frontend dependencies and builds
+frontend/node_modules/
+frontend/dist/
+frontend/.eslintcache
+
+# Env files
+.env
+.env.local
+.env.*
+
+# OS specific files
+.DS_Store
+Thumbs.db
+
+# IDE / Editor
+.vscode/
+.idea/
+*.swp

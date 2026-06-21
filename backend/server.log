@@ -1,0 +1,5 @@
+2026/06/21 16:52:36 Starting LLM Inspector
+2026/06/21 16:52:36 Target: https://api.openai.com
+2026/06/21 16:52:36 Proxy server listening on :9090
+2026/06/21 16:52:36 API/WebSocket server listening on :9091
+2026/06/21 16:52:38 WebSocket upgrade error: websocket: not a websocket handshake: 'Sec-WebSocket-Key' header must be Base64 encoded value of 16-byte in length
