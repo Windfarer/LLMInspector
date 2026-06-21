@@ -385,18 +385,20 @@ function App() {
                         <td style={{ color: 'var(--text-secondary)' }}>{formatTime(req.start_time)}</td>
                         <td>
                           <span className="badge">{req.model || 'unknown'}</span>
-                          {req.cached_tokens > 0 && (
-                            <span style={{ color: '#10b981', fontSize: '0.8em', marginLeft: '0.5rem', fontWeight: 600 }}>
-                              ⚡ Cache: {req.cached_tokens} ({getCacheHitRate(req)}%)
-                            </span>
-                          )}
                         </td>
                         <td>
-                          {req.prompt_tokens} / {req.is_thinking ? (
-                            <span style={{ color: '#475569', fontWeight: 600 }}>{req.reasoning_tokens}</span>
-                          ) : (
-                            <span>{req.content_tokens}</span>
-                          )} / {req.reasoning_tokens}
+                          <div>
+                            {req.prompt_tokens} / {req.is_thinking ? (
+                              <span style={{ color: '#475569', fontWeight: 600 }}>{req.reasoning_tokens}</span>
+                            ) : (
+                              <span>{req.content_tokens}</span>
+                            )} / {req.reasoning_tokens}
+                          </div>
+                          {req.cached_tokens > 0 && (
+                            <div style={{ color: '#10b981', fontSize: '0.8em', marginTop: '0.25rem', fontWeight: 600 }}>
+                              ⚡ Cache: {req.cached_tokens} ({getCacheHitRate(req)}%)
+                            </div>
+                          )}
                         </td>
                         <td>{req.ttft_ms ? `${(req.ttft_ms / 1000).toFixed(2)}s` : 'waiting...'}</td>
                         <td>
@@ -438,13 +440,17 @@ function App() {
                         <td style={{ color: 'var(--text-secondary)' }}>{getEndTime(req)}</td>
                         <td>
                           <span className="badge">{req.model || 'unknown'}</span>
+                        </td>
+                        <td>
+                          <div>
+                            {req.prompt_tokens} / {req.content_tokens} / {req.reasoning_tokens}
+                          </div>
                           {req.cached_tokens > 0 && (
-                            <span style={{ color: '#10b981', fontSize: '0.8em', marginLeft: '0.5rem', fontWeight: 600 }}>
+                            <div style={{ color: '#10b981', fontSize: '0.8em', marginTop: '0.25rem', fontWeight: 600 }}>
                               ⚡ Cache: {req.cached_tokens} ({getCacheHitRate(req)}%)
-                            </span>
+                            </div>
                           )}
                         </td>
-                        <td>{req.prompt_tokens} / {req.content_tokens} / {req.reasoning_tokens}</td>
                         <td>{(req.ttft_ms / 1000).toFixed(2)}s</td>
                         <td>{(req.e2e_ms / 1000).toFixed(2)}s</td>
                         <td><span style={{ color: '#10b981' }}>{calcThroughput(req)}</span></td>
