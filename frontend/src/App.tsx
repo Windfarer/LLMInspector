@@ -56,6 +56,7 @@ interface UserStats {
   userId: string;
   activeCount: number;
   completedCount: number;
+  totalPromptTokens: number;
   totalContentTokens: number;
   totalReasoningTokens: number;
   avgTTFT: number;
@@ -177,6 +178,7 @@ function App() {
         userId,
         activeCount: stats.active,
         completedCount: stats.completed,
+        totalPromptTokens: stats.promptTokens,
         totalContentTokens: stats.contentTokens,
         totalReasoningTokens: stats.reasoningTokens,
         avgTTFT: stats.completed > 0 ? Number((stats.totalTTFT / stats.completed / 1000).toFixed(2)) : 0,
@@ -248,7 +250,7 @@ function App() {
                 <th>User ID</th>
                 <th>Active</th>
                 <th>Completed</th>
-                <th>Tokens (C/R)</th>
+                <th>Tokens (Prompt / Content / Reasoning)</th>
                 <th>Avg TTFT (s)</th>
                 <th>Avg E2E (s)</th>
                 <th>Avg TPS</th>
@@ -261,7 +263,7 @@ function App() {
                   <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{user.userId}</td>
                   <td><span className={user.activeCount > 0 ? 'badge' : ''}>{user.activeCount}</span></td>
                   <td>{user.completedCount}</td>
-                  <td>{user.totalContentTokens} / {user.totalReasoningTokens}</td>
+                  <td>{user.totalPromptTokens} / {user.totalContentTokens} / {user.totalReasoningTokens}</td>
                   <td>{user.avgTTFT}s</td>
                   <td>{user.avgE2E}s</td>
                   <td><span style={{ color: '#10b981', fontWeight: 600 }}>{user.avgThroughput}</span></td>
