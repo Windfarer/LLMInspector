@@ -42,6 +42,7 @@ func main() {
 	go func() {
 		mux := http.NewServeMux()
 		mux.HandleFunc("/ws", apiServer.HandleWebSocket)
+		mux.HandleFunc("/api/requests", apiServer.HandleGetRequests)
 		log.Printf("API/WebSocket server listening on :%s", *apiPort)
 		if err := http.ListenAndServe(":"+*apiPort, mux); err != nil {
 			log.Fatalf("API server error: %v", err)

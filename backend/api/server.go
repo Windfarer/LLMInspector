@@ -33,6 +33,25 @@ func NewServer(manager *metrics.Manager) *Server {
 	return s
 }
 
+func (s *Server) HandleGetRequests(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Content-Type", "application/json")
+	if r.Method == http.MethodOptions {
+		return
+	}
+	reqs := s.manager.GetRecentRequests(1000)
+	if reqs == nil {
+		reqs = []*models.RequestStats{}
+	}
+	data, err := json.Marshal(reqs)
+	if err != nil {
+		http.Error(w, "internal error", http.StatusInternalServerError)
+		return
+	}
+	_, _ = w.Write(data)
+}
+
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
@@ -42,13 +61,8 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	s.mu.Lock()
 	s.clients[conn] = true
-	
-	// Send historical state (limit to 100 for example)
-	for _, req := range s.manager.GetRecentRequests(100) {
-		s.sendToConn(conn, req)
-	}
 
-	// Send active state
+	// Only push in-flight active requests; historical data is fetched via GET /api/requests
 	for _, req := range s.manager.GetActiveRequests() {
 		s.sendToConn(conn, req)
 	}

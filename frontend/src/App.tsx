@@ -155,9 +155,21 @@ function App() {
     try {
       const ws = new WebSocket(backendUrl);
       
-      ws.onopen = () => {
+      ws.onopen = async () => {
         setIsConnected(true);
         setRequests(new Map());
+        try {
+          const httpBase = backendUrl.replace(/^ws(s?):\/\//, 'http$1://').replace(/\/ws$/, '');
+          const res = await fetch(`${httpBase}/api/requests`);
+          const historical: RequestStats[] = await res.json();
+          setRequests(prev => {
+            const merged = new Map(historical.map((r: RequestStats) => [r.id, r]));
+            for (const [id, req] of prev) merged.set(id, req);
+            return merged;
+          });
+        } catch (e) {
+          console.error('Failed to load historical requests', e);
+        }
       };
 
       ws.onmessage = (event) => {
