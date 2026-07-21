@@ -299,18 +299,32 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		pr, pw := io.Pipe()
 		tee := io.TeeReader(resp.Body, pw)
 
+		// EventEnd is sent by the goroutine AFTER the parser finishes,
+		// ensuring any accumulated tool calls are submitted first.
 		if isAnthropicAPI {
-			go p.parseAnthropicStream(pr, reqID, userID)
+			go func() {
+				p.parseAnthropicStream(pr, reqID, userID)
+				p.manager.SubmitEvent(metrics.ProxyEvent{
+					Type:      metrics.EventEnd,
+					ReqID:     reqID,
+					Timestamp: time.Now(),
+				})
+			}()
 		} else {
-			go p.parseStream(pr, reqID, userID)
+			go func() {
+				p.parseStream(pr, reqID, userID)
+				p.manager.SubmitEvent(metrics.ProxyEvent{
+					Type:      metrics.EventEnd,
+					ReqID:     reqID,
+					Timestamp: time.Now(),
+				})
+			}()
 		}
 
 		resp.Body = &teeReadCloser{
-			Reader:  tee,
-			Closer:  resp.Body,
-			pw:      pw,
-			manager: p.manager,
-			reqID:   reqID,
+			Reader: tee,
+			Closer: resp.Body,
+			pw:     pw,
 		}
 
 		return nil
@@ -458,7 +472,6 @@ func (p *ProxyServer) parseAnthropicStream(reader io.Reader, reqID string, userI
 	var currentEventType string
 	var inputTokens int
 	var cacheReadTokens int
-	var currentBlockIndex int
 
 	// Accumulate tool_use blocks by content block index
 	type toolUseAcc struct {
@@ -520,7 +533,6 @@ func (p *ProxyServer) parseAnthropicStream(reader io.Reader, reqID string, userI
 				} `json:"content_block"`
 			}
 			if err := json.Unmarshal(data, &event); err == nil {
-				currentBlockIndex = event.Index
 				if event.ContentBlock.Type == "tool_use" {
 					toolUseAccMap[event.Index] = &toolUseAcc{
 						id:   event.ContentBlock.ID,
@@ -540,7 +552,6 @@ func (p *ProxyServer) parseAnthropicStream(reader io.Reader, reqID string, userI
 				} `json:"delta"`
 			}
 			if err := json.Unmarshal(data, &event); err == nil {
-				_ = currentBlockIndex
 				content := ""
 				reasoning := ""
 				switch event.Delta.Type {
@@ -614,9 +625,7 @@ func (p *ProxyServer) parseAnthropicStream(reader io.Reader, reqID string, userI
 type teeReadCloser struct {
 	io.Reader
 	io.Closer
-	pw      *io.PipeWriter
-	manager *metrics.Manager
-	reqID   string
+	pw *io.PipeWriter
 }
 
 func (t *teeReadCloser) Read(p []byte) (n int, err error) {
@@ -625,11 +634,6 @@ func (t *teeReadCloser) Read(p []byte) (n int, err error) {
 
 func (t *teeReadCloser) Close() error {
 	err := t.Closer.Close()
-	t.pw.Close() // Close the pipe so the parser goroutine exits
-	t.manager.SubmitEvent(metrics.ProxyEvent{
-		Type:      metrics.EventEnd,
-		ReqID:     t.reqID,
-		Timestamp: time.Now(),
-	})
+	t.pw.Close() // signals EOF to the parser goroutine
 	return err
 }
