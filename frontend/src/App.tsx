@@ -108,6 +108,7 @@ function App() {
   const wsRef = useRef<WebSocket | null>(null);
   const thinkingRef = useRef<HTMLPreElement>(null);
   const outputRef = useRef<HTMLPreElement>(null);
+  const modalBodyRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     connect();
@@ -130,6 +131,9 @@ function App() {
     }
     if (outputRef.current) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
+    }
+    if (modalBodyRef.current) {
+      modalBodyRef.current.scrollTop = modalBodyRef.current.scrollHeight;
     }
   }, [requests, selectedRequestId]);
 
@@ -612,7 +616,7 @@ function App() {
                 )}
               </div>
             </div>
-            <div className="modal-body">
+            <div className="modal-body" ref={modalBodyRef}>
               <div className="content-section">
                 <h3 
                   style={{ display: 'flex', alignItems: 'center', cursor: 'pointer', gap: '0.5rem' }} 
