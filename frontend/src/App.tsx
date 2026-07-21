@@ -66,7 +66,9 @@ interface UserStats {
 }
 
 function App() {
-  const [backendUrl, setBackendUrl] = useState('ws://localhost:8081/ws');
+  const [backendUrl, setBackendUrl] = useState(
+    () => localStorage.getItem('llminspector_backend_url') ?? 'ws://localhost:8081/ws'
+  );
   const [isConnected, setIsConnected] = useState(false);
   const [requests, setRequests] = useState<Map<string, RequestStats>>(new Map());
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
@@ -484,7 +486,10 @@ function App() {
         <input 
           type="text" 
           value={backendUrl} 
-          onChange={(e) => setBackendUrl(e.target.value)}
+          onChange={(e) => {
+            setBackendUrl(e.target.value);
+            localStorage.setItem('llminspector_backend_url', e.target.value);
+          }}
           placeholder="ws://localhost:8081/ws"
         />
         <button onClick={connect}>Connect</button>
