@@ -16,6 +16,31 @@ import (
 	"github.com/windfarer/llminspector/metrics"
 )
 
+// normalizedToolCall is the unified tool call format used for storage.
+type normalizedToolCall struct {
+	ID       string                 `json:"id"`
+	Type     string                 `json:"type"`
+	Function normalizedToolCallFunc `json:"function"`
+}
+
+type normalizedToolCallFunc struct {
+	Name      string `json:"name"`
+	Arguments string `json:"arguments"`
+}
+
+// serializeToolCalls converts a slice of normalizedToolCall to a JSON string.
+// Returns empty string if the slice is empty.
+func serializeToolCalls(calls []normalizedToolCall) string {
+	if len(calls) == 0 {
+		return ""
+	}
+	b, err := json.Marshal(calls)
+	if err != nil {
+		return ""
+	}
+	return string(b)
+}
+
 type ProxyServer struct {
 	targetURL  *url.URL
 	userHeader string
@@ -119,9 +144,12 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					var payload struct {
 						Model   string `json:"model"`
 						Content []struct {
-							Type     string `json:"type"`
-							Text     string `json:"text"`
-							Thinking string `json:"thinking"`
+							Type     string          `json:"type"`
+							Text     string          `json:"text"`
+							Thinking string          `json:"thinking"`
+							ID       string          `json:"id"`
+							Name     string          `json:"name"`
+							Input    json.RawMessage `json:"input"`
 						} `json:"content"`
 						Usage struct {
 							InputTokens              int `json:"input_tokens"`
@@ -134,12 +162,26 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					if err := json.Unmarshal(bodyBytes, &payload); err == nil {
 						content := ""
 						reasoning := ""
+						var toolCalls []normalizedToolCall
 						for _, block := range payload.Content {
 							switch block.Type {
 							case "text":
 								content += block.Text
 							case "thinking":
 								reasoning += block.Thinking
+							case "tool_use":
+								args := ""
+								if len(block.Input) > 0 {
+									args = string(block.Input)
+								}
+								toolCalls = append(toolCalls, normalizedToolCall{
+									ID:   block.ID,
+									Type: "function",
+									Function: normalizedToolCallFunc{
+										Name:      block.Name,
+										Arguments: args,
+									},
+								})
 							}
 						}
 
@@ -155,6 +197,7 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							Model:          m,
 							ChunkContent:   content,
 							ChunkReasoning: reasoning,
+							ToolCallsJSON:  serializeToolCalls(toolCalls),
 							ExactTokens:    payload.Usage.OutputTokens,
 							PromptTokens:   payload.Usage.InputTokens,
 							TotalTokens:    payload.Usage.InputTokens + payload.Usage.OutputTokens,
@@ -169,6 +212,14 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							Message struct {
 								Content          string `json:"content"`
 								ReasoningContent string `json:"reasoning_content"`
+								ToolCalls        []struct {
+									ID       string `json:"id"`
+									Type     string `json:"type"`
+									Function struct {
+										Name      string `json:"name"`
+										Arguments string `json:"arguments"`
+									} `json:"function"`
+								} `json:"tool_calls"`
 							} `json:"message"`
 							Text string `json:"text"`
 						} `json:"choices"`
@@ -185,6 +236,7 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 					if err := json.Unmarshal(bodyBytes, &payload); err == nil {
 						content := ""
 						reasoning := ""
+						var toolCallsJSON string
 						if len(payload.Choices) > 0 {
 							// completion (Legacy)
 							if payload.Choices[0].Text != "" {
@@ -193,6 +245,20 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 								// chat completion
 								content = payload.Choices[0].Message.Content
 								reasoning = payload.Choices[0].Message.ReasoningContent
+								if len(payload.Choices[0].Message.ToolCalls) > 0 {
+									calls := make([]normalizedToolCall, 0, len(payload.Choices[0].Message.ToolCalls))
+									for _, tc := range payload.Choices[0].Message.ToolCalls {
+										calls = append(calls, normalizedToolCall{
+											ID:   tc.ID,
+											Type: tc.Type,
+											Function: normalizedToolCallFunc{
+												Name:      tc.Function.Name,
+												Arguments: tc.Function.Arguments,
+											},
+										})
+									}
+									toolCallsJSON = serializeToolCalls(calls)
+								}
 							}
 						}
 
@@ -209,6 +275,7 @@ func (p *ProxyServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 							Model:          m,
 							ChunkContent:   content,
 							ChunkReasoning: reasoning,
+							ToolCallsJSON:  toolCallsJSON,
 							ExactTokens:    payload.Usage.CompletionTokens,
 							PromptTokens:   payload.Usage.PromptTokens,
 							TotalTokens:    payload.Usage.TotalTokens,
@@ -263,6 +330,15 @@ func (p *ProxyServer) parseStream(reader io.Reader, reqID string, userID string)
 
 	var model string
 
+	// Accumulate tool call arguments by index
+	type toolCallAcc struct {
+		id        string
+		tcType    string
+		name      string
+		arguments strings.Builder
+	}
+	toolCallAccMap := map[int]*toolCallAcc{}
+
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if !bytes.HasPrefix(line, []byte("data: ")) {
@@ -280,6 +356,15 @@ func (p *ProxyServer) parseStream(reader io.Reader, reqID string, userID string)
 				Delta struct {
 					Content          string `json:"content"`
 					ReasoningContent string `json:"reasoning_content"`
+					ToolCalls        []struct {
+						Index    int    `json:"index"`
+						ID       string `json:"id"`
+						Type     string `json:"type"`
+						Function struct {
+							Name      string `json:"name"`
+							Arguments string `json:"arguments"`
+						} `json:"function"`
+					} `json:"tool_calls"`
 				} `json:"delta"`
 			} `json:"choices"`
 			Usage struct {
@@ -301,6 +386,24 @@ func (p *ProxyServer) parseStream(reader io.Reader, reqID string, userID string)
 			if len(chunk.Choices) > 0 {
 				content = chunk.Choices[0].Delta.Content
 				reasoning = chunk.Choices[0].Delta.ReasoningContent
+
+				// Accumulate tool_calls by index
+				for _, tc := range chunk.Choices[0].Delta.ToolCalls {
+					if _, ok := toolCallAccMap[tc.Index]; !ok {
+						toolCallAccMap[tc.Index] = &toolCallAcc{}
+					}
+					acc := toolCallAccMap[tc.Index]
+					if tc.ID != "" {
+						acc.id = tc.ID
+					}
+					if tc.Type != "" {
+						acc.tcType = tc.Type
+					}
+					if tc.Function.Name != "" {
+						acc.name = tc.Function.Name
+					}
+					acc.arguments.WriteString(tc.Function.Arguments)
+				}
 			}
 
 			p.manager.SubmitEvent(metrics.ProxyEvent{
@@ -317,6 +420,33 @@ func (p *ProxyServer) parseStream(reader io.Reader, reqID string, userID string)
 			})
 		}
 	}
+
+	// After stream ends, emit accumulated tool calls if any
+	if len(toolCallAccMap) > 0 {
+		calls := make([]normalizedToolCall, len(toolCallAccMap))
+		for idx, acc := range toolCallAccMap {
+			tcType := acc.tcType
+			if tcType == "" {
+				tcType = "function"
+			}
+			calls[idx] = normalizedToolCall{
+				ID:   acc.id,
+				Type: tcType,
+				Function: normalizedToolCallFunc{
+					Name:      acc.name,
+					Arguments: acc.arguments.String(),
+				},
+			}
+		}
+		p.manager.SubmitEvent(metrics.ProxyEvent{
+			Type:          metrics.EventChunk,
+			ReqID:         reqID,
+			UserID:        userID,
+			Model:         model,
+			ToolCallsJSON: serializeToolCalls(calls),
+			Timestamp:     time.Now(),
+		})
+	}
 }
 
 func (p *ProxyServer) parseAnthropicStream(reader io.Reader, reqID string, userID string) {
@@ -328,6 +458,15 @@ func (p *ProxyServer) parseAnthropicStream(reader io.Reader, reqID string, userI
 	var currentEventType string
 	var inputTokens int
 	var cacheReadTokens int
+	var currentBlockIndex int
+
+	// Accumulate tool_use blocks by content block index
+	type toolUseAcc struct {
+		id        string
+		name      string
+		arguments strings.Builder
+	}
+	toolUseAccMap := map[int]*toolUseAcc{}
 
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -371,15 +510,37 @@ func (p *ProxyServer) parseAnthropicStream(reader io.Reader, reqID string, userI
 				})
 			}
 
+		case "content_block_start":
+			var event struct {
+				Index        int `json:"index"`
+				ContentBlock struct {
+					Type string `json:"type"`
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				} `json:"content_block"`
+			}
+			if err := json.Unmarshal(data, &event); err == nil {
+				currentBlockIndex = event.Index
+				if event.ContentBlock.Type == "tool_use" {
+					toolUseAccMap[event.Index] = &toolUseAcc{
+						id:   event.ContentBlock.ID,
+						name: event.ContentBlock.Name,
+					}
+				}
+			}
+
 		case "content_block_delta":
 			var event struct {
+				Index int `json:"index"`
 				Delta struct {
-					Type     string `json:"type"`
-					Text     string `json:"text"`
-					Thinking string `json:"thinking"`
+					Type        string `json:"type"`
+					Text        string `json:"text"`
+					Thinking    string `json:"thinking"`
+					PartialJSON string `json:"partial_json"`
 				} `json:"delta"`
 			}
 			if err := json.Unmarshal(data, &event); err == nil {
+				_ = currentBlockIndex
 				content := ""
 				reasoning := ""
 				switch event.Delta.Type {
@@ -387,6 +548,10 @@ func (p *ProxyServer) parseAnthropicStream(reader io.Reader, reqID string, userI
 					content = event.Delta.Text
 				case "thinking_delta":
 					reasoning = event.Delta.Thinking
+				case "input_json_delta":
+					if acc, ok := toolUseAccMap[event.Index]; ok {
+						acc.arguments.WriteString(event.Delta.PartialJSON)
+					}
 				}
 				if content != "" || reasoning != "" {
 					p.manager.SubmitEvent(metrics.ProxyEvent{
@@ -420,6 +585,29 @@ func (p *ProxyServer) parseAnthropicStream(reader io.Reader, reqID string, userI
 				})
 			}
 		}
+	}
+
+	// After stream ends, emit accumulated tool_use calls if any
+	if len(toolUseAccMap) > 0 {
+		calls := make([]normalizedToolCall, 0, len(toolUseAccMap))
+		for _, acc := range toolUseAccMap {
+			calls = append(calls, normalizedToolCall{
+				ID:   acc.id,
+				Type: "function",
+				Function: normalizedToolCallFunc{
+					Name:      acc.name,
+					Arguments: acc.arguments.String(),
+				},
+			})
+		}
+		p.manager.SubmitEvent(metrics.ProxyEvent{
+			Type:          metrics.EventChunk,
+			ReqID:         reqID,
+			UserID:        userID,
+			Model:         model,
+			ToolCallsJSON: serializeToolCalls(calls),
+			Timestamp:     time.Now(),
+		})
 	}
 }
 

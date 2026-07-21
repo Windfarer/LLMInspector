@@ -19,10 +19,40 @@ interface RequestStats {
   input_content: string;
   output_content: string;
   reasoning_content: string;
+  tool_calls: string;
   is_thinking: boolean;
   is_streaming: boolean;
   is_completed: boolean;
 }
+
+interface ToolCallFunc {
+  name: string;
+  arguments: string;
+}
+
+interface ToolCall {
+  id: string;
+  type: string;
+  function: ToolCallFunc;
+}
+
+const parseToolCalls = (json: string): ToolCall[] => {
+  if (!json) return [];
+  try {
+    return JSON.parse(json) as ToolCall[];
+  } catch {
+    return [];
+  }
+};
+
+const formatToolArguments = (args: string): string => {
+  if (!args) return '';
+  try {
+    return JSON.stringify(JSON.parse(args), null, 2);
+  } catch {
+    return args;
+  }
+};
 
 const calcThroughput = (req: RequestStats): number => {
   if (!req.is_completed) return 0;
@@ -301,10 +331,6 @@ function App() {
       ? Number((completedReqs.reduce((acc, r) => acc + r.ttft_ms, 0) / completedReqs.length / 1000).toFixed(2))
       : 0;
 
-    const avgE2E = completedReqs.length > 0 
-      ? Number((completedReqs.reduce((acc, r) => acc + r.e2e_ms, 0) / completedReqs.length / 1000).toFixed(2))
-      : 0;
-
     const avgTPS = completedReqs.length > 0 
       ? Number((completedReqs.reduce((acc, r) => acc + calcThroughput(r), 0) / completedReqs.length).toFixed(1))
       : 0;
@@ -433,6 +459,11 @@ function App() {
                               ⚡ Cache: {req.cached_tokens} ({getCacheHitRate(req)}%)
                             </div>
                           )}
+                          {parseToolCalls(req.tool_calls).length > 0 && (
+                            <div style={{ color: '#f59e0b', fontSize: '0.8em', marginTop: '0.25rem', fontWeight: 600 }}>
+                              🔧 {parseToolCalls(req.tool_calls).length} tool call(s)
+                            </div>
+                          )}
                         </td>
                         <td>{req.ttft_ms ? `${(req.ttft_ms / 1000).toFixed(2)}s` : 'waiting...'}</td>
                         <td>
@@ -482,6 +513,11 @@ function App() {
                           {req.cached_tokens > 0 && (
                             <div style={{ color: '#10b981', fontSize: '0.8em', marginTop: '0.25rem', fontWeight: 600 }}>
                               ⚡ Cache: {req.cached_tokens} ({getCacheHitRate(req)}%)
+                            </div>
+                          )}
+                          {parseToolCalls(req.tool_calls).length > 0 && (
+                            <div style={{ color: '#f59e0b', fontSize: '0.8em', marginTop: '0.25rem', fontWeight: 600 }}>
+                              🔧 {parseToolCalls(req.tool_calls).length} tool call(s)
                             </div>
                           )}
                         </td>
@@ -607,6 +643,48 @@ function App() {
                   {requests.get(selectedRequestId)!.output_content || 'Waiting for output...'}
                 </pre>
               </div>
+
+              {(() => {
+                const toolCalls = parseToolCalls(requests.get(selectedRequestId)!.tool_calls);
+                if (toolCalls.length === 0) return null;
+                return (
+                  <div className="content-section">
+                    <h3>Tool Calls <span style={{ fontSize: '0.85em', color: 'var(--text-secondary)', fontWeight: 400 }}>({toolCalls.length})</span></h3>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                      {toolCalls.map((tc, i) => (
+                        <div key={tc.id || i} style={{
+                          border: '1px solid #fde68a',
+                          borderRadius: '8px',
+                          overflow: 'hidden',
+                          background: 'rgba(251, 191, 36, 0.05)',
+                        }}>
+                          <div style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '0.5rem',
+                            padding: '0.5rem 0.75rem',
+                            background: 'rgba(251, 191, 36, 0.1)',
+                            borderBottom: '1px solid #fde68a',
+                          }}>
+                            <span style={{ fontSize: '0.85em' }}>🔧</span>
+                            <span style={{ fontWeight: 700, color: '#b45309', fontFamily: 'monospace', fontSize: '0.9em' }}>
+                              {tc.function.name}
+                            </span>
+                            {tc.id && (
+                              <span style={{ marginLeft: 'auto', color: 'var(--text-secondary)', fontSize: '0.75em', fontFamily: 'monospace' }}>
+                                {tc.id}
+                              </span>
+                            )}
+                          </div>
+                          <pre className="code-block" style={{ margin: 0, borderRadius: 0, borderTop: 'none', fontSize: '0.85em', maxHeight: '200px', overflowY: 'auto' }}>
+                            {formatToolArguments(tc.function.arguments) || '(no arguments)'}
+                          </pre>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

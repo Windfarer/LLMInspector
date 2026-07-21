@@ -18,18 +18,19 @@ const (
 )
 
 type ProxyEvent struct {
-	Type            EventType
-	ReqID           string
-	UserID          string
-	Model           string
-	ChunkContent    string
-	ChunkReasoning  string
-	InputContent    string
-	ExactTokens     int // For non-stream
-	PromptTokens    int
-	TotalTokens     int
-	CachedTokens    int
-	Timestamp       time.Time
+	Type           EventType
+	ReqID          string
+	UserID         string
+	Model          string
+	ChunkContent   string
+	ChunkReasoning string
+	InputContent   string
+	ToolCallsJSON  string
+	ExactTokens    int // For non-stream
+	PromptTokens   int
+	TotalTokens    int
+	CachedTokens   int
+	Timestamp      time.Time
 }
 
 type Manager struct {
@@ -109,6 +110,9 @@ func (m *Manager) processEvents() {
 					req.OutputContent += e.ChunkContent
 					req.IsThinking = false
 				}
+				if e.ToolCallsJSON != "" {
+					req.ToolCalls = e.ToolCallsJSON
+				}
 				if e.PromptTokens > 0 {
 					req.PromptTokens = e.PromptTokens
 				}
@@ -131,6 +135,9 @@ func (m *Manager) processEvents() {
 				req.PromptTokens = e.PromptTokens
 				req.TotalTokens = e.TotalTokens
 				req.CachedTokens = e.CachedTokens
+				if e.ToolCallsJSON != "" {
+					req.ToolCalls = e.ToolCallsJSON
+				}
 				req.IsThinking = false
 				m.triggerHooks(req)
 			}

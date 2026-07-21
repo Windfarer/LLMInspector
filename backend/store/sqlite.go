@@ -43,17 +43,23 @@ func (s *Store) initDB() error {
 		input_content TEXT,
 		output_content TEXT,
 		reasoning_content TEXT,
+		tool_calls TEXT DEFAULT '',
 		is_streaming BOOLEAN,
 		is_completed BOOLEAN
 	);`
 	_, err := s.db.Exec(query)
-	return err
+	if err != nil {
+		return err
+	}
+	// Migrate existing databases that may not have the tool_calls column.
+	_, _ = s.db.Exec(`ALTER TABLE requests ADD COLUMN tool_calls TEXT DEFAULT ''`)
+	return nil
 }
 
 func (s *Store) SaveRequest(req *models.RequestStats) error {
 	query := `
-	INSERT INTO requests (id, user_id, model, start_time, ttft_ms, e2e_ms, prompt_tokens, content_tokens, reasoning_tokens, total_tokens, cached_tokens, input_content, output_content, reasoning_content, is_streaming, is_completed)
-	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+	INSERT INTO requests (id, user_id, model, start_time, ttft_ms, e2e_ms, prompt_tokens, content_tokens, reasoning_tokens, total_tokens, cached_tokens, input_content, output_content, reasoning_content, tool_calls, is_streaming, is_completed)
+	VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	ON CONFLICT(id) DO UPDATE SET
 		e2e_ms=excluded.e2e_ms,
 		prompt_tokens=excluded.prompt_tokens,
@@ -63,11 +69,12 @@ func (s *Store) SaveRequest(req *models.RequestStats) error {
 		cached_tokens=excluded.cached_tokens,
 		output_content=excluded.output_content,
 		reasoning_content=excluded.reasoning_content,
+		tool_calls=excluded.tool_calls,
 		is_completed=excluded.is_completed;
 	`
 	_, err := s.db.Exec(query,
 		req.ID, req.UserID, req.Model, req.StartTime, req.TTFTMs, req.E2EMs,
-		req.PromptTokens, req.ContentTokens, req.ReasoningTokens, req.TotalTokens, req.CachedTokens, req.InputContent, req.OutputContent, req.ReasoningContent, req.IsStreaming, req.IsCompleted,
+		req.PromptTokens, req.ContentTokens, req.ReasoningTokens, req.TotalTokens, req.CachedTokens, req.InputContent, req.OutputContent, req.ReasoningContent, req.ToolCalls, req.IsStreaming, req.IsCompleted,
 	)
 	if err != nil {
 		log.Printf("Error saving request to DB: %v", err)
@@ -77,7 +84,7 @@ func (s *Store) SaveRequest(req *models.RequestStats) error {
 
 func (s *Store) GetRecentRequests(limit int) ([]*models.RequestStats, error) {
 	query := `
-	SELECT id, user_id, model, start_time, ttft_ms, e2e_ms, prompt_tokens, content_tokens, reasoning_tokens, total_tokens, cached_tokens, input_content, output_content, reasoning_content, is_streaming, is_completed
+	SELECT id, user_id, model, start_time, ttft_ms, e2e_ms, prompt_tokens, content_tokens, reasoning_tokens, total_tokens, cached_tokens, input_content, output_content, reasoning_content, tool_calls, is_streaming, is_completed
 	FROM requests
 	ORDER BY start_time DESC
 	LIMIT ?
@@ -93,7 +100,7 @@ func (s *Store) GetRecentRequests(limit int) ([]*models.RequestStats, error) {
 		var req models.RequestStats
 		err := rows.Scan(
 			&req.ID, &req.UserID, &req.Model, &req.StartTime, &req.TTFTMs, &req.E2EMs,
-			&req.PromptTokens, &req.ContentTokens, &req.ReasoningTokens, &req.TotalTokens, &req.CachedTokens, &req.InputContent, &req.OutputContent, &req.ReasoningContent, &req.IsStreaming, &req.IsCompleted,
+			&req.PromptTokens, &req.ContentTokens, &req.ReasoningTokens, &req.TotalTokens, &req.CachedTokens, &req.InputContent, &req.OutputContent, &req.ReasoningContent, &req.ToolCalls, &req.IsStreaming, &req.IsCompleted,
 		)
 		if err != nil {
 			return nil, err
