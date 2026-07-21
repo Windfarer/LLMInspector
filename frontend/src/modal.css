@@ -1,5 +1,10 @@
 /* Add these to the end of frontend/src/index.css */
 
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.4); }
+}
+
 .clickable-row {
   cursor: pointer;
 }

@@ -74,6 +74,7 @@ function App() {
   const [selectedRequestId, setSelectedRequestId] = useState<string | null>(null);
   const [viewingUser, setViewingUser] = useState<string | null>(null);
   const [isInputCollapsed, setIsInputCollapsed] = useState(true);
+  const [isTracking, setIsTracking] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const thinkingRef = useRef<HTMLPreElement>(null);
   const outputRef = useRef<HTMLPreElement>(null);
@@ -101,6 +102,16 @@ function App() {
       outputRef.current.scrollTop = outputRef.current.scrollHeight;
     }
   }, [requests, selectedRequestId]);
+
+  useEffect(() => {
+    if (!isTracking || !viewingUser) return;
+    const userReqs = Array.from(requests.values() as Iterable<RequestStats>).filter(r => r.user_id === viewingUser);
+    if (userReqs.length === 0) return;
+    const latest = userReqs.reduce((a: RequestStats, b: RequestStats) =>
+      new Date(a.start_time) >= new Date(b.start_time) ? a : b
+    );
+    setSelectedRequestId(latest.id);
+  }, [requests, isTracking, viewingUser]);
 
   const connect = () => {
     if (wsRef.current) {
@@ -312,8 +323,29 @@ function App() {
     return (
       <>
         <div className="sub-header" style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '1.5rem' }}>
-          <button className="back-btn" onClick={() => setViewingUser(null)}>← Back</button>
+          <button className="back-btn" onClick={() => { setViewingUser(null); setIsTracking(false); setSelectedRequestId(null); }}>← Back</button>
           <h2 style={{ margin: 0, color: 'var(--text-primary)' }}>Requests for <span style={{ color: 'var(--accent-primary)' }}>{viewingUser}</span></h2>
+          <button
+            onClick={() => setIsTracking(t => !t)}
+            style={{
+              marginLeft: 'auto',
+              padding: '0.4rem 1rem',
+              borderRadius: '999px',
+              border: isTracking ? 'none' : '1px solid var(--glass-border)',
+              background: isTracking ? 'linear-gradient(135deg, #ef4444, #f97316)' : 'transparent',
+              color: isTracking ? '#fff' : 'var(--text-secondary)',
+              fontWeight: 600,
+              fontSize: '0.875rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.4rem',
+              transition: 'all 0.2s',
+            }}
+          >
+            <span style={{ display: 'inline-block', width: '8px', height: '8px', borderRadius: '50%', background: isTracking ? '#fff' : 'var(--text-secondary)', animation: isTracking ? 'pulse 1s infinite' : 'none' }} />
+            {isTracking ? 'Tracking...' : 'Track Latest'}
+          </button>
         </div>
 
         <div className="stats-grid">
@@ -518,12 +550,12 @@ function App() {
       )}
 
       {selectedRequestId && requests.get(selectedRequestId) && (
-        <div className="modal-overlay" onClick={() => setSelectedRequestId(null)}>
+        <div className="modal-overlay" onClick={() => { setSelectedRequestId(null); setIsTracking(false); }}>
           <div className="modal-content" onClick={e => e.stopPropagation()}>
             <div className="modal-header" style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%', alignItems: 'center' }}>
                 <h2>Request Details <span className="badge">{requests.get(selectedRequestId)!.model}</span></h2>
-                <button className="close-btn" onClick={() => setSelectedRequestId(null)}>×</button>
+                <button className="close-btn" onClick={() => { setSelectedRequestId(null); setIsTracking(false); }}>×</button>
               </div>
               <div style={{ display: 'flex', gap: '1rem', color: 'var(--text-secondary)', fontSize: '0.875rem', marginTop: '0.5rem', flexWrap: 'wrap' }}>
                 <span><strong>Start:</strong> {formatTime(requests.get(selectedRequestId)!.start_time)}</span>
